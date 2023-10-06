@@ -7,8 +7,8 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-setwd("A:/teaching/2023_Neurogenomics_course/lecture4/public")
-
+knitr::opts_knit$set(root.dir = "~/Downloads") # Set working directory for all chunks
+# setwd("~/Downloads") # Set working directory for a chunk
 ```
 
 ## R Markdown
@@ -19,66 +19,67 @@ When you click the **Knit** button a document will be generated that includes bo
 
 ##Install packages as needed
 ```{r}
-packages_to_install=c("snpStats","snpRelate")
-install.packages(setdiff(packages_to_install, rownames(installed.packages())))
-rm(packages_to_install)
+install.packages("BiocManager")
+BiocManager::install(c("snpStats","SNPRelate"), update=F, ask=F)
+```
+#Load packages
+```{r}
+require(snpStats)
+require(SNPRelate)
+##this is needed for GWAA and GWAS_Manhattan functions to run and plot GWAS
+source("GWASfunction.R")
 ```
 
+# Calculate lambda
 ```{r cars}
 
-
 ####How to calculate Lambda in GWAS
-set.seed(1234)
+set.seed(0) # changing the random seed is going to chage the lambda. However, if you keep chanigng it many many times the average lambda is closer to the true lambda. For simplicity we are not doing that here but you're encouranged to play with it.
 pvalue <- runif(1000, min=0, max=1)
+hist(pvalue)
 chisq <- qchisq(1-pvalue,1)
-
+hist(chisq)
+abline(v=median(chisq), col="red", lwd=3) #median line
 
 # For z-scores as association, just square them
     # chisq <- data$z^2
         #For chi-squared values, keep as is
         #chisq <- data$chisq
 lambda = median(chisq)/qchisq(0.5,1)
+message("Observed: ", median(chisq), "\nExpected: ", qchisq(0.5,1),
+        "\nLambda: ", lambda)
 
-
-set.seed(1121)
-pvalue1 <- rnorm (1000, 0.4, 0.1)
+pvalue1 <- rnorm(1000, 0.4, 0.1)
+hist(pvalue1)
 chisq1 <- qchisq(1-pvalue1,1)
+hist(chisq1)
+abline(v=median(chisq1), col="red", lwd=3) #median line
 lambda1 = median(chisq1)/qchisq(0.5,1)
-lambda1
+message("Observed: ", median(chisq1), "\nExpected: ", qchisq(0.5,1),
+        "\nLambda: ", lambda1)
 #####
 ```
 ```{r}
-require(snpStats)
-require(SNPRelate)
 
 load("PhenoGenoMapCleaned.RData")
-ls()
 names(genData)
 ##explore MAP and LIP tables
 
 col.summary(genData$SNP)$MAF[1:50]
 head(col.summary(genData$SNP))
 head(as.data.frame(genData$SNP))
-
-
-
-
 ```
 
 ```{r}
 ###run PCA and vizualize the results
 ###requires a origin file which lists the country of origin (ethnicity) of participants
 
-write.plink("combined",snp.major = TRUE, genData$SNP , human.genome=TRUE)
+if (exists("genofile")) snpgdsClose(genofile)
 snpgdsBED2GDS(bed.fn = "combined.bed", bim.fn = "combined.bim",
               fam.fn = "combined.fam", out.gdsfn = "myGDS", cvt.chr = "char")
 genofile <- snpgdsOpen("myGDS", readonly = F)
-gds.ids <- read.gdsn(index.gdsn(genofile, "sample.id"))
-gds.ids <- sub("-1", "", gds.ids)
-add.gdsn(genofile, "sample.id", gds.ids, replace = T)
-geno.sample.ids <- rownames(genData$SNP)
 
-pca <- snpgdsPCA(genofile, sample.id = geno.sample.ids,  num.thread = 1)
+pca <- snpgdsPCA(genofile,  num.thread = 1)
 pctab <- data.frame(sample.id = pca$sample.id,
                     PC1 = pca$eigenvect[,1],
                     PC2 = pca$eigenvect[,2],
@@ -88,11 +89,11 @@ origin <- origin[match(pca$sample.id, origin$sample.id),]
 pcaCol <- rep(rgb(0,0,0,.3), length(pca$sample.id)) # Set black for chinese
 pcaCol[origin$origin == "Indian"] <- rgb(1,0,0,.3) # red for indian
 pcaCol[origin$origin == "Malay"] <- rgb(0,.7,0,.3) # green for malay
-png("PCApopulation.png", width = 500, height = 500)
+
+##run three lines together to have it in one plot.
 plot(pctab$PC1, pctab$PC2, xlab = "PC1", ylab = "PC2", col = pcaCol, pch = 16)
 abline(h = 0, v = 0, lty = 2, col = "grey")
 legend("top", legend = c("Chinese", "Indian", "Malay"), col = 1:3, pch = 16, bty = "n")
-dev.off()
 
 ```
 
@@ -100,7 +101,6 @@ dev.off()
 ```{r}
 # Choose trait for association analysis, use colnames(genData$LIP) for listing
 # NOTE: Ignore the first column of genData$LIP (gender)
-source("GWASfunction.R")
 target <- "Cholesterol"
 phenodata <- data.frame("id" = rownames(genData$LIP),
                         "phenotype" = scale(genData$LIP[,target]), stringsAsFactors = F)
@@ -116,10 +116,13 @@ GWASout$type <- rep("typed", nrow(GWASout))
 GWASout$Neg_logP <- -log10(GWASout$p.value)
 GWASout <- merge(GWASout, genData$MAP[,c("SNP", "chr", "position")])
 GWASout <- GWASout[order(GWASout$Neg_logP, decreasing = T),]
-png(paste(target, ".png", sep = ""), height = 500,width = 1000)
 GWAS_Manhattan(GWASout)
-dev.off()
 #############################
 ```
 
+
+Feel free to run a GWAS for any other trait in `colnames(genData$LIP)`.
+```{r}
+
+```
 
